@@ -10,58 +10,96 @@ class RestaurantManager(models.Manager):
     def all(self):
         return self.filter(is_active=True)
 
+from django.db import models
+from cryptography.fernet import Fernet
+import base64
+
+# Key should be securely stored and loaded as shown previously
+key = Fernet.generate_key()
+cipher_suite = Fernet(key)
+
+class EncryptedField(models.CharField):
+    def __init__(self, *args, **kwargs):
+        kwargs['max_length'] = kwargs.get('max_length', 255)
+        super().__init__(*args, **kwargs)
+
+    def from_db_value(self, value, expression, connection):
+        if value is None:
+            return value
+    
+        try:
+            # Check if the value is encrypted (e.g., base64 encoded string)
+            decoded_value = base64.urlsafe_b64decode(value + '=' * (-len(value) % 4))
+            decrypted_value = cipher_suite.decrypt(decoded_value).decode('utf-8')
+            return decrypted_value
+        except (TypeError, ValueError):
+            # If decryption fails, return the value as-is
+            return value
+
+
+    def get_prep_value(self, value):
+        if value is None:
+            return value
+        
+        # Encrypt and encode the value with correct padding
+        try:
+            encrypted_value = cipher_suite.encrypt(value.encode('utf-8'))
+            encoded_value = base64.urlsafe_b64encode(encrypted_value).decode('utf-8')
+            return encoded_value.rstrip('=')  # Remove padding
+        except Exception as e:
+            # Handle encryption errors
+            raise ValueError(f"Encryption error: {e}")
+
 
 
 
 class Restaurant(models.Model):
     # Basic
-    title 	    	   = models.CharField(max_length=500, blank=False, null=False)
-    slug               = models.SlugField(blank=True, unique=True)
-    phone	   		   = models.CharField(max_length=128, blank=False, null=False)
-    email      		   = models.CharField(max_length=252, blank=True, null=True, default='')
-    # minimum
-    min_serve_time     = models.IntegerField(default=30, blank=False, verbose_name='Minimum Serve Time')
-    min_order_tk 	   = models.FloatField(default=150.00, blank=False, verbose_name='Minimum Order')
-    service_charge     = models.FloatField(default=30.00, blank=False, verbose_name='Service Charge')
-    vat_tax            = models.FloatField(default=0.0, blank=True, verbose_name='Vat/Tax')
-    # location/contact
-    city               = models.ForeignKey(City, on_delete=models.CASCADE)
-    address			   = models.CharField(max_length=1024, blank=False, null=False)
-    environment		   = models.CharField(max_length=512, blank=False, null=False)
-    map_embed_url      = models.TextField(blank=False, default='https://maps.google.com/')
+    title = models.CharField(max_length=500, blank=False, null=False)
+    slug = models.SlugField(blank=True, unique=True)
+    phone = EncryptedField(max_length=128, blank=False, null=False)
+    email = EncryptedField(max_length=252, blank=True, null=True, default='')
+    
+    # Minimum
+    min_serve_time = models.IntegerField(default=30, blank=False, verbose_name='Minimum Serve Time')
+    min_order_tk = models.FloatField(default=150.00, blank=False, verbose_name='Minimum Order')
+    service_charge = models.FloatField(default=30.00, blank=False, verbose_name='Service Charge')
+    vat_tax = models.FloatField(default=0.0, blank=True, verbose_name='Vat/Tax')
+    
+    # Location/Contact
+    city = models.ForeignKey(City, on_delete=models.CASCADE)
+    address = EncryptedField(max_length=1024, blank=False, null=False)
+    environment = EncryptedField(max_length=512, blank=False, null=False)
+    map_embed_url = EncryptedField(blank=False, default='https://maps.google.com/')
     
     # Photos
-    logo 	 		   = models.ImageField(
-                            'logo',
-                            upload_to="restaurant_logo/",
-                            null=True, blank=True,
-                            width_field="logo_width_field",
-                            height_field="logo_height_field",
-                        )
-    logo_height_field  = models.IntegerField(default=0)
-    logo_width_field   = models.IntegerField(default=0)
-    pp    	 		   = models.ImageField(
-							'profile photo',
-							upload_to="restaurant_pp/",
-							null=True, blank=True,
-							width_field="pp_width_field",
-							height_field="pp_height_field",
-						)
-    pp_height_field    = models.IntegerField(default=0)
-    pp_width_field     = models.IntegerField(default=0)
-
+    logo = models.ImageField(
+        'logo',
+        upload_to="restaurant_logo/",
+        null=True, blank=True,
+        width_field="logo_width_field",
+        height_field="logo_height_field",
+    )
+    logo_height_field = models.IntegerField(default=0)
+    logo_width_field = models.IntegerField(default=0)
+    pp = models.ImageField(
+        'profile photo',
+        upload_to="restaurant_pp/",
+        null=True, blank=True,
+        width_field="pp_width_field",
+        height_field="pp_height_field",
+    )
+    pp_height_field = models.IntegerField(default=0)
+    pp_width_field = models.IntegerField(default=0)
     
-
     # Others
-    is_active          = models.BooleanField(default=False)
-    is_orderable       = models.BooleanField(default=False)
-    created_at 		   = models.DateTimeField(auto_now=False, auto_now_add=True)
-    updated_at		   = models.DateTimeField(auto_now=True)
-    extra_info         = models.TextField(blank=True, null=True)
-    food_items         = models.ManyToManyField(Food, blank=True)
-    # best_selling_item = models.CharField(max_length=200)
-    # least_selling_item = models.CharField(max_length=230)
-    # Sales Report
+    is_active = models.BooleanField(default=False)
+    is_orderable = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now=False, auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    extra_info = models.TextField(blank=True, null=True)
+    food_items = models.ManyToManyField(Food, blank=True)
+    
     # Restaurant qs manager
     objects = RestaurantManager()
 
@@ -92,6 +130,7 @@ class Restaurant(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
 
 class Order(models.Model):
     restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE)

@@ -27,6 +27,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+ENCRYPTION_KEY = b'your_generated_key_here'
+
 
 # Application definition
 
